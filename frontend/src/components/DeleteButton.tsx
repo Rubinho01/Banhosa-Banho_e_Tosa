@@ -15,9 +15,7 @@ export function DeleteButton({ action, label, confirmMessage }: Props) {
   function handleClick() {
     const message = confirmMessage ?? `Tem certeza que deseja excluir ${label}? Essa ação não pode ser desfeita.`;
     if (!window.confirm(message)) return;
-    startTransition(() => {
-      action();
-    });
+		startTransition(() => action());
   }
 
   return (

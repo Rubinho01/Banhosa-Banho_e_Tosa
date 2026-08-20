@@ -5,7 +5,7 @@ const AUTH_COOKIE = 'banhosa_auth';
 // Rotas que exigem login. Qualquer caminho fora desta lista (ex.: /login) fica liberado.
 const PROTECTED_PREFIXES = ['/dashboard', '/agendamentos', '/pets', '/tutores', '/profissionais'];
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isProtected = PROTECTED_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 
