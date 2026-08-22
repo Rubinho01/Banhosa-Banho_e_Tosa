@@ -4,7 +4,7 @@ import { useTransition } from 'react';
 import { Icon } from './Icon';
 
 type Props = {
-  action: () => Promise<void>;
+  action: () => Promise<{ error?: string } | void>;
   label: string;
   confirmMessage?: string;
 };
@@ -15,7 +15,12 @@ export function DeleteButton({ action, label, confirmMessage }: Props) {
   function handleClick() {
     const message = confirmMessage ?? `Tem certeza que deseja excluir ${label}? Essa ação não pode ser desfeita.`;
     if (!window.confirm(message)) return;
-		startTransition(() => action());
+    startTransition(async () => {
+      const result = await action();
+      if (result?.error) {
+        window.alert(result.error);
+      }
+    });
   }
 
   return (

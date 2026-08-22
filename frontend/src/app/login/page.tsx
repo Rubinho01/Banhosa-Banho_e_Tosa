@@ -3,26 +3,31 @@
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-
-const VALID_USERNAME = 'banhosa.adm';
-const VALID_PASSWORD = 'banhosa123';
+import { loginAction } from '@/app/actions';
 
 export default function LoginPage() {
   const router = useRouter();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  function submit(event: FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
-    // Modo demonstração: na integração real, autenticar via API antes de redirecionar.
-    if (username === VALID_USERNAME && password === VALID_PASSWORD) {
-      setError('');
-      document.cookie = 'banhosa_auth=1; path=/; SameSite=Lax';
-      router.push('/dashboard');
-    } else {
-      setError('Usuário ou senha incorretos.');
+    setLoading(true);
+    setError('');
+
+    const result = await loginAction(username, password);
+
+    setLoading(false);
+
+    if (result.error) {
+      setError(result.error);
+      return;
     }
+
+    router.push('/dashboard');
+    router.refresh();
   }
 
   return (
@@ -41,6 +46,7 @@ export default function LoginPage() {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="Seu usuário"
+              autoComplete="username"
             />
           </div>
           <div className="form-field">
@@ -53,10 +59,13 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
+              autoComplete="current-password"
             />
           </div>
           {error ? <div className="notice" style={{ background: 'var(--danger-soft)', color: '#a73d3d' }}>{error}</div> : null}
-          <button className="btn btn-primary" type="submit">Entrar</button>
+          <button className="btn btn-primary" type="submit" disabled={loading}>
+            {loading ? 'Entrando...' : 'Entrar'}
+          </button>
         </form>
       </div>
     </div>
