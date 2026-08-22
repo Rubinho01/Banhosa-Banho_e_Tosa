@@ -1,7 +1,4 @@
-# Banhosa — Projeto completo (Backend + Frontend)
-
-Sistema de gestão de agenda de banho, tosa e atendimento veterinário.
-Projeto acadêmico.
+# Banhosa — (Backend + Frontend)
 
 ```
 banhosa-completo/
