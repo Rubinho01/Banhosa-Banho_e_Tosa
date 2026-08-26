@@ -17,4 +17,9 @@ ignore = ["B008"]  # FastAPI usa Depends() como default de argumento, de propós
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
-testpaths = ["app/tests"]
+testpaths = ["tests"]
+filterwarnings = [
+    # Ignora os avisos de depreciação de terceiros específicos
+    "ignore:'crypt' is deprecated and slated for removal in Python 3.13:DeprecationWarning",
+    "ignore:datetime.datetime.utcnow\\(\\) is deprecated:DeprecationWarning",
+]
