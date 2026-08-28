@@ -1,98 +1,151 @@
-import { Appointment, Pet, Professional, Tutor } from '@/types';
+import { cookies } from 'next/headers';
+import {
+  Appointment,
+  AppointmentCreateInput,
+  DashboardData,
+  Pet,
+  PetCreateInput,
+  Professional,
+  ProfessionalCreateInput,
+  Tutor,
+  TutorCreateInput,
+} from '@/types';
 
-// Armazenamento em memória (modo demonstração). Substituir por chamadas reais
-// à API FastAPI + banco de dados quando a integração for feita.
-const tutors: Tutor[] = [];
-const pets: Pet[] = [];
-const professionals: Professional[] = [];
-const appointments: Appointment[] = [];
+// Este módulo roda exclusivamente no servidor (chamado por Server
+// Components e Server Actions), então pode ler o cookie httpOnly com o
+// JWT diretamente via next/headers, sem expor o token ao navegador.
 
-function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+const API_URL = process.env.API_URL ?? 'http://localhost:8000';
+const API_PREFIX = '/api/v1';
+export const AUTH_COOKIE_NAME = 'banhosa_token';
 
-export async function getDashboardData() {
-  const today = todayISO();
-  const todaysAppointments = appointments
-    .filter((item) => item.date === today)
-    .sort((a, b) => a.startTime.localeCompare(b.startTime));
-
-  return Promise.resolve({
-    totals: {
-      appointmentsToday: todaysAppointments.length,
-      activeClients: tutors.length,
-      pets: pets.length,
-      professionals: professionals.filter((item) => item.active).length,
-    },
-    appointments: todaysAppointments,
-  });
-}
-
-export async function getTutors() { return Promise.resolve(tutors); }
-export async function getPets() { return Promise.resolve(pets); }
-export async function getProfessionals() { return Promise.resolve(professionals); }
-export async function getAppointments() {
-  return Promise.resolve([...appointments].sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime)));
-}
-
-export async function createAppointment(input: Omit<Appointment, 'id'>) {
-  // Replace with POST /agendamentos when FastAPI is connected.
-  const appointment: Appointment = { ...input, id: `a-${Date.now()}` };
-  appointments.push(appointment);
-  return Promise.resolve(appointment);
-}
-
-export async function createTutor(input: Omit<Tutor, 'id' | 'petsCount'>) {
-  // Replace with POST /tutores when FastAPI is connected.
-  const tutor: Tutor = { ...input, id: `t-${Date.now()}`, petsCount: 0 };
-  tutors.push(tutor);
-  return Promise.resolve(tutor);
-}
-
-export async function createPet(input: Omit<Pet, 'id'>) {
-  // Replace with POST /pets when FastAPI is connected.
-  const pet: Pet = { ...input, id: `p-${Date.now()}` };
-  pets.push(pet);
-  const tutor = tutors.find((item) => item.name === pet.tutorName);
-  if (tutor) tutor.petsCount += 1;
-  return Promise.resolve(pet);
-}
-
-export async function createProfessional(input: Omit<Professional, 'id'>) {
-  // Replace with POST /profissionais when FastAPI is connected.
-  const professional: Professional = { ...input, id: `prof-${Date.now()}` };
-  professionals.push(professional);
-  return Promise.resolve(professional);
-}
-
-export async function deleteTutor(id: string) {
-  // Replace with DELETE /tutores/{id} when FastAPI is connected.
-  const index = tutors.findIndex((item) => item.id === id);
-  if (index !== -1) tutors.splice(index, 1);
-  return Promise.resolve({ id });
-}
-
-export async function deletePet(id: string) {
-  // Replace with DELETE /pets/{id} when FastAPI is connected.
-  const index = pets.findIndex((item) => item.id === id);
-  if (index !== -1) {
-    const [removed] = pets.splice(index, 1);
-    const tutor = tutors.find((item) => item.name === removed.tutorName);
-    if (tutor && tutor.petsCount > 0) tutor.petsCount -= 1;
+class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+    this.name = 'ApiError';
   }
-  return Promise.resolve({ id });
 }
 
-export async function deleteProfessional(id: string) {
-  // Replace with DELETE /profissionais/{id} when FastAPI is connected.
-  const index = professionals.findIndex((item) => item.id === id);
-  if (index !== -1) professionals.splice(index, 1);
-  return Promise.resolve({ id });
+async function extractErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = await response.json();
+    if (typeof body?.detail === 'string') return body.detail;
+  } catch {
+    // corpo vazio ou não-JSON — mantém a mensagem padrão
+  }
+  return fallback;
 }
 
-export async function deleteAppointment(id: string) {
-  // Replace with DELETE /agendamentos/{id} when FastAPI is connected.
-  const index = appointments.findIndex((item) => item.id === id);
-  if (index !== -1) appointments.splice(index, 1);
-  return Promise.resolve({ id });
+async function authHeaders(): Promise<Record<string, string>> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(AUTH_COOKIE_NAME)?.value;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(`${API_URL}${API_PREFIX}${path}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(await authHeaders()),
+      ...(init.headers ?? {}),
+    },
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    const message = await extractErrorMessage(response, `Erro ${response.status} ao comunicar com a API.`);
+    throw new ApiError(response.status, message);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+  return (await response.json()) as T;
+}
+
+// --- Autenticação -----------------------------------------------------------
+// Não passa por apiFetch pois ainda não existe token nesse momento.
+
+export async function login(username: string, password: string): Promise<string> {
+  const response = await fetch(`${API_URL}${API_PREFIX}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+    cache: 'no-store',
+  });
+
+  if (!response.ok) {
+    const message = await extractErrorMessage(response, 'Usuário ou senha incorretos.');
+    throw new ApiError(response.status, message);
+  }
+
+  const data = (await response.json()) as { access_token: string };
+  return data.access_token;
+}
+
+// --- Leituras -----------------------------------------------------------------
+
+export async function getDashboardData(): Promise<DashboardData> {
+  return apiFetch<DashboardData>('/dashboard');
+}
+
+export async function getTutors(): Promise<Tutor[]> {
+  return apiFetch<Tutor[]>('/tutores');
+}
+
+export async function getPets(): Promise<Pet[]> {
+  return apiFetch<Pet[]>('/pets');
+}
+
+export async function getProfessionals(): Promise<Professional[]> {
+  return apiFetch<Professional[]>('/profissionais');
+}
+
+export async function getAppointments(): Promise<Appointment[]> {
+  return apiFetch<Appointment[]>('/agendamentos');
+}
+
+// --- Criação --------------------------------------------------------------
+
+export async function createTutor(input: TutorCreateInput): Promise<Tutor> {
+  return apiFetch<Tutor>('/tutores', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function createPet(input: PetCreateInput): Promise<Pet> {
+  return apiFetch<Pet>('/pets', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function createProfessional(input: ProfessionalCreateInput): Promise<Professional> {
+  return apiFetch<Professional>('/profissionais', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function createAppointment(input: AppointmentCreateInput): Promise<Appointment> {
+  // A duração (RN-01) e a disponibilidade (RN-02) são sempre calculadas e
+  // validadas no backend — o frontend só envia a intenção do agendamento.
+  return apiFetch<Appointment>('/agendamentos', { method: 'POST', body: JSON.stringify(input) });
+}
+
+// --- Remoção ----------------------------------------------------------------
+
+export async function deleteTutor(id: string): Promise<{ id: string }> {
+  await apiFetch<void>(`/tutores/${id}`, { method: 'DELETE' });
+  return { id };
+}
+
+export async function deletePet(id: string): Promise<{ id: string }> {
+  await apiFetch<void>(`/pets/${id}`, { method: 'DELETE' });
+  return { id };
+}
+
+export async function deleteProfessional(id: string): Promise<{ id: string }> {
+  await apiFetch<void>(`/profissionais/${id}`, { method: 'DELETE' });
+  return { id };
+}
+
+export async function deleteAppointment(id: string): Promise<{ id: string }> {
+  await apiFetch<void>(`/agendamentos/${id}`, { method: 'DELETE' });
+  return { id };
 }

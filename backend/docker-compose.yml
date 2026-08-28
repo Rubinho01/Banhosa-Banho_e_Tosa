@@ -1,0 +1,28 @@
+# Sobe apenas o PostgreSQL, para quem não quer instalar localmente.
+# A API continua rodando fora do Docker (uvicorn app.main:app --reload),
+# conforme decidido para este projeto acadêmico.
+#
+# Uso:
+#   docker compose up -d
+#   (depois, no .env: DATABASE_URL=postgresql+psycopg2://banhosa:banhosa@localhost:5432/banhosa)
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: banhosa
+      POSTGRES_PASSWORD: banhosa
+      POSTGRES_DB: banhosa
+    ports:
+      - "5432:5432"
+    volumes:
+      - banhosa_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U banhosa -d banhosa"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  banhosa_pgdata:

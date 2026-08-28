@@ -19,11 +19,13 @@ export function NovoAgendamentoForm({ pets, professionals }: Props) {
   const [startTime, setStartTime] = useState('09:00');
   const [professionalId, setProfessionalId] = useState(professionals[0]?.id ?? '');
   const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const pet = pets.find((item) => item.id === petId);
   const professional = professionals.find((item) => item.id === professionalId);
   const base = baseDurations[service] ?? 60;
+  // Estimativa só para a UI — o valor que vale é o que a API recalcula (RN-01).
   const calculatedDuration = useMemo(() => (pet ? getAppointmentDuration(base, pet.size) : base), [base, pet]);
 
   if (pets.length === 0 || professionals.length === 0) {
@@ -45,8 +47,23 @@ export function NovoAgendamentoForm({ pets, professionals }: Props) {
     event.preventDefault();
     if (!pet || !professional) return;
     setLoading(true);
-    await createAppointmentAction({ petName: pet.name, tutorName: pet.tutorName, service, size: pet.size, professionalName: professional.name, date, startTime, durationMinutes: calculatedDuration, status: 'Pendente' });
+    setError('');
+    const result = await createAppointmentAction({
+      pet_id: pet.id,
+      profissional_id: professional.id,
+      service,
+      date,
+      start_time: startTime,
+      status: 'Pendente',
+    });
     setLoading(false);
+    if (result.error) {
+      // Aqui chegam os erros de regra de negócio vindos do backend, ex.:
+      // "Conflito de horário: o profissional já possui um agendamento..." (RN-02)
+      // ou "Horário fora do funcionamento..."
+      setError(result.error);
+      return;
+    }
     setMessage('Agendamento criado com sucesso.');
     router.refresh();
   }
@@ -61,8 +78,8 @@ export function NovoAgendamentoForm({ pets, professionals }: Props) {
         <div className="form-field"><label htmlFor="date">Data</label><input id="date" className="input" type="date" value={date} onChange={(e)=>setDate(e.target.value)} /></div>
         <div className="form-field"><label htmlFor="time">Horário</label><input id="time" className="input" type="time" value={startTime} onChange={(e)=>setStartTime(e.target.value)} /></div>
         <div className="form-field"><label>Regra de duração</label><div className="notice"><strong>{formatDuration(calculatedDuration)}</strong> de duração estimada. Para porte <strong>Grande</strong> ou <strong>Gigante</strong>, a agenda considera o dobro do tempo-base (RN-01).</div></div>
-      </div>{message ? <div className="notice" style={{ marginTop: 16 }}>{message}</div> : null}<div style={{ marginTop: 18, display:'flex', justifyContent:'flex-end', gap: 10 }}><a href="/agendamentos" className="btn btn-secondary">Cancelar</a><button className="btn btn-primary" type="submit" disabled={loading}><Icon name="check"/> {loading ? 'Salvando...' : 'Criar agendamento'}</button></div></form>
-      <aside className="summary-card"><div className="eyebrow" style={{color:'#e2d5c4'}}>Resumo</div><h3 style={{margin:'7px 0 12px', fontSize: 20}}>Bloqueio de agenda</h3><p className="muted" style={{fontSize: 12, lineHeight:1.5}}>A duração exibida serve para orientar a UI. A API FastAPI deve recalcular e validar disponibilidade no servidor antes de efetivar o agendamento.</p><div className="summary-row"><span>Pet</span><strong>{pet?.name ?? '—'}</strong></div><div className="summary-row"><span>Porte</span><strong>{pet?.size ?? '—'}</strong></div><div className="summary-row"><span>Serviço</span><strong>{service}</strong></div><div className="summary-row"><span>Duração</span><strong>{formatDuration(calculatedDuration)}</strong></div><div className="summary-row"><span>Profissional</span><strong>{professional?.name ?? '—'}</strong></div></aside>
+      </div>{error ? <div className="notice" style={{ marginTop: 16, background: 'var(--danger-soft)', color: '#a73d3d' }}>{error}</div> : null}{message ? <div className="notice" style={{ marginTop: 16 }}>{message}</div> : null}<div style={{ marginTop: 18, display:'flex', justifyContent:'flex-end', gap: 10 }}><a href="/agendamentos" className="btn btn-secondary">Cancelar</a><button className="btn btn-primary" type="submit" disabled={loading}><Icon name="check"/> {loading ? 'Salvando...' : 'Criar agendamento'}</button></div></form>
+      <aside className="summary-card"><div className="eyebrow" style={{color:'#e2d5c4'}}>Resumo</div><h3 style={{margin:'7px 0 12px', fontSize: 20}}>Bloqueio de agenda</h3><p className="muted" style={{fontSize: 12, lineHeight:1.5}}>A duração exibida aqui é só uma estimativa. A API recalcula a duração e valida a disponibilidade do profissional antes de confirmar o agendamento.</p><div className="summary-row"><span>Pet</span><strong>{pet?.name ?? '—'}</strong></div><div className="summary-row"><span>Porte</span><strong>{pet?.size ?? '—'}</strong></div><div className="summary-row"><span>Serviço</span><strong>{service}</strong></div><div className="summary-row"><span>Duração</span><strong>{formatDuration(calculatedDuration)}</strong></div><div className="summary-row"><span>Profissional</span><strong>{professional?.name ?? '—'}</strong></div></aside>
     </div>
   </>;
 }

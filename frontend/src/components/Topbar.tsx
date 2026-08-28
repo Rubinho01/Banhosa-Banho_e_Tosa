@@ -1,6 +1,8 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
+import { useTransition } from 'react';
+import { logoutAction } from '@/app/actions';
 import { Icon } from './Icon';
 
 const titles: Record<string, string> = {
@@ -14,12 +16,18 @@ const titles: Record<string, string> = {
 export function Topbar() {
   const pathname = usePathname();
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const title = titles[pathname] ?? 'Banhosa Baso';
 
   function logout() {
-    document.cookie = 'banhosa_auth=; path=/; max-age=0';
-    router.push('/login');
+    // O cookie do JWT é httpOnly (não pode ser apagado via document.cookie),
+    // então o logout precisa passar por uma Server Action.
+    startTransition(async () => {
+      await logoutAction();
+      router.push('/login');
+      router.refresh();
+    });
   }
 
-  return <header className="topbar"><div><div className="eyebrow">Pet care · Gestão</div><h1>{title}</h1></div><div className="topbar-actions"><button className="user-chip" onClick={logout} title="Sair"><div className="avatar">BA</div><div><strong>Banhosa.Adm</strong><small>Administrador</small></div><Icon name="chevron"/></button></div></header>;
+  return <header className="topbar"><div><div className="eyebrow">Pet care · Gestão</div><h1>{title}</h1></div><div className="topbar-actions"><button className="user-chip" onClick={logout} disabled={isPending} title="Sair"><div className="avatar">BA</div><div><strong>Banhosa.Adm</strong><small>Administrador</small></div><Icon name="chevron"/></button></div></header>;
 }
