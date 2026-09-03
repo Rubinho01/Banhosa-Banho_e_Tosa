@@ -1,4 +1,4 @@
-# Quando rodar esse for subir esse arquivo para a sua IDE e rodar o projeto, troque o nome do arquivo para o seguinte: '.env.example' e remova o md do final do nome e ele vai funcionar normalmente
+# Quando rodar esse for subir esse arquivo para a sua IDE e rodar o projeto, troque o nome do arquivo para o seguinte: '.env.local.example' e remova o md do final do nome e ele vai funcionar normalmente
 
 
 
