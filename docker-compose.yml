@@ -1,16 +1,19 @@
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: appuser
-      POSTGRES_PASSWORD: apppassword
-      POSTGRES_DB: appdb
+      POSTGRES_USER: banhosa
+      POSTGRES_PASSWORD: banhosa
+      POSTGRES_DB: banhosa
+    ports:
+      - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - banhosa_pgdata:/var/lib/postgresql/data
     networks:
       - app-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U appuser"]
+      test: ["CMD-SHELL", "pg_isready -U banhosa -d banhosa"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -29,7 +32,7 @@ services:
     networks:
       - app-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -41,7 +44,9 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://backend:8000
+      - NEXT_PUBLIC_API_URL=http://localhost:8000      # usado no browser
+      - INTERNAL_API_URL=http://backend:8000
+      - API_URL=http://backend:8000            # usado no server Next.js
     depends_on:
       backend:
         condition: service_healthy
@@ -53,4 +58,4 @@ networks:
     driver: bridge
 
 volumes:
-  pgdata:
+  banhosa_pgdata:
