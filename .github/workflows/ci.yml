@@ -12,7 +12,6 @@ backend:
 name: Backend (pytest)
 runs-on: ubuntu-latest
 
-```
 defaults:
   run:
     working-directory: backend
@@ -31,13 +30,11 @@ steps:
 
   - name: Rodar testes (pytest)
     run: pytest -v
-```
 
 frontend:
 name: Frontend (npm)
 runs-on: ubuntu-latest
 
-```
 defaults:
   run:
     working-directory: frontend
