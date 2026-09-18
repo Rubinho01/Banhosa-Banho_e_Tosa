@@ -1,3 +1,4 @@
+
 # 🐾 Banhosa Baso e Tosa
 
 > Documento oficial de padronização técnica e fluxo de trabalho do projeto.
@@ -63,7 +64,7 @@ banho_tosa/
 │   │   ├── main.py             # Aplicação FastAPI
 │   │   └── seed.py             # Seed inicial de dados
 │   ├── alembic/                # Migrações do banco de dados
-│   ├── docker-compose.yml      # Configuração do PostgreSQL com Docker
+│   ├── Dockerfile              # Dockerfile do backend
 │   ├── requirements.txt        # Dependências do backend
 │   ├── pyproject.toml          # Configuração do projeto Python
 │   ├── alembic.ini             # Configuração do Alembic
@@ -84,9 +85,9 @@ banho_tosa/
 │   ├── package.json            # Dependências e scripts do frontend
 │   ├── next.config.mjs         # Configuração do Next.js
 │   ├── vitest.config.ts        # Configuração do Vitest
-│   ├── docker-compose.yml      # Configuração do frontend com Docker
 │   ├── dockerfile              # Dockerfile do frontend
 │   └── README.md               # Instruções do frontend
+├── docker-compose.yml          # Arquivo para executar o projeto
 ```
 
 ## 🔚 Endpoints
@@ -132,10 +133,7 @@ banho_tosa/
 ### 1. Pré-requisitos
 
 - Git
-- Python 3.11+
-- Node.js 20.6+ e npm
-- PostgreSQL
-- Docker e Docker Compose (opcional, para subir o banco e o app em container)
+- Docker e Docker Compose
 
 ### 2. Clonar o projeto
 
@@ -144,151 +142,28 @@ git clone https://github.com/Rubinho01/Banhosa-Banho_e_Tosa
 cd Banhosa-Banho_e_Tosa
 ```
 
-## Backend
+## Execução do projeto
 
-### Opção A — Rodar o backend com Docker
-
-```bash
-# Dentro da pasta `backend`:
-cd backend
-docker compose up -d
-
-# Esse comando sobe o PostgreSQL configurado pelo projeto.
-# Se quiser validar o banco:
-docker compose ps
-
-# Depois, configure o ambiente do backend:
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# Crie o arquivo `.env` se ele ainda não existir:
-cat > .env <<'EOF'
-DATABASE_URL=postgresql://banhosa:banhosa@localhost:5432/banhosa
-EOF
-
-# Em seguida, rode as migrações e o seed:
-alembic upgrade head
-python -m app.seed
-
-# Finalmente, inicie a API:
-uvicorn app.main:app --reload --port 8000
-```
-
-A API ficará disponível em:
-
-```text
-http://localhost:8000
-Swagger: http://localhost:8000/docs
-```
-
-### Opção B — Rodar o backend localmente sem Docker
 
 ```bash
-# Se você preferir usar PostgreSQL instalado na máquina:
-CREATE DATABASE banhosa;
-CREATE USER banhosa WITH PASSWORD 'banhosa';
-GRANT ALL PRIVILEGES ON DATABASE banhosa TO banhosa;
+# 1) Na raiz do projeto "banhosa-completo/"
+$ docker compose up
 
-# Depois:
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# Crie o arquivo `.env` com:
-DATABASE_URL=postgresql://banhosa:banhosa@localhost:5432/banhosa
-
-# E execute:
-alembic upgrade head
-python -m app.seed
-uvicorn app.main:app --reload --port 8000
+# 2) Para executar a criação do usuário teste para desenvolvimento:
+$ docker compose exec backend python -m app.seed # Ainda em "banhosa-completo/"
 ```
 
-Credenciais padrão do sistema:
+Abra `http://localhost:3000` — login com `banhosa.adm` / `banhosa123`.
 
-```text
-usuário: banhosa.adm
-senha: banhosa123
-```
+## Estado atual
 
-## Frontend
-
-### Opção A - Rodar Docker para o frontend
-
-```bash
-# Se quiser subir o frontend em container:
-cd frontend
-docker compose up -d
-```
-
-Em seguida, acesse:
-
-```text
-http://localhost:3000
-```
-
-### Opção B - Rodar o Front-end Localmente sem Docker
-
-```bash
-# Dentro da pasta `frontend`:
-cd frontend
-npm install
-
-# Crie o arquivo `.env.local`:
-cat > .env.local <<'EOF'
-API_URL=http://localhost:8000
-EOF
-
-# Inicie o frontend:
-npm run dev
-```
-
-A aplicação estará em:
-
-```text
-http://localhost:3000
-```
-
-## Executando os dois juntos
-
-Abra dois terminais:
-
-```bash
-# Terminal 1 — backend
-cd backend
-source .venv/bin/activate
-uvicorn app.main:app --reload --port 8000
-
-# Terminal 2 — frontend
-cd frontend
-npm install
-npm run dev
-```
-
-Acesse:
-
-```text
-- Frontend: http://localhost:3000
-- Backend: http://localhost:8000
-- Swagger: http://localhost:8000/docs
-```
-
-## Verificação final
-
-Confirme que tudo está funcionando:
-
-```bash
-curl http://localhost:8000/health
-```
-
-Se a API responder corretamente, o backend está no ar. Depois, abra o frontend em http://localhost:3000 e faça login com:
-
-```text
-usuário: banhosa.adm
-senha: banhosa123
-```
-
+- **Backend**: API completa, arquitetura em camadas (`api/schemas/models/
+  services/repositories/core/tests`), RN-01 e RN-02 implementadas e
+  testadas via `pytest`, autenticação JWT, migrations via Alembic.
+- **Frontend**: já integrado à API real (não usa mais o mock em memória).
+  Login, CRUD de tutores/pets/profissionais e criação de agendamentos
+  conversam de fato com o backend.
+- **Pendente de validação**: rodar testes para correção de bugs
 ## Estratégia de Branches
 
 > Adotamos uma versão **simplificada do GitFlow**, com duas branches permanentes e branches de apoio de vida curta.
@@ -477,3 +352,4 @@ Todo PR deve usar o seguinte checklist na descrição:
 - O título do PR deve seguir o mesmo padrão do Conventional Commits (ex: `feat(agendamento): duração dobrada para porte grande`).
 
 > Nenhum PR é mergeado em `dev` ou `main` sem **pelo menos 1 aprovação** de outro integrante do time. Mudanças que envolvam a RN-01 (regra de duração por porte) exigem aprovação adicional do QA.
+
