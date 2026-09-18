@@ -1,30 +1,10 @@
-# Banhosa — (Backend + Frontend)
-
-```
-banhosa-completo/
-├── backend/     # API FastAPI (Python) — ver backend/README.md
-└── frontend/    # App Next.js (TypeScript) — ver frontend/README.md
-```
-
-Cada pasta tem seu próprio README com instruções detalhadas de setup.
-Resumo rápido para rodar os dois juntos:
 
 ```bash
-# 1) Banco de dados (Postgres via Docker, só para o backend)
-cd backend
-docker compose up -d
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-alembic upgrade head
-python -m app.seed          # cria o usuário banhosa.adm / banhosa123
-uvicorn app.main:app --reload --port 8000
+# 1) Na raiz do projeto "banhosa-completo/"
+$ docker compose up
 
-# 2) Frontend, em outro terminal
-cd frontend
-cp .env.local.example .env.local
-npm install
-npm run dev
+# 2) Para executar a criação do usuário teste para desenvolvimento:
+$ docker compose exec backend python -m app.seed # Ainda em "banhosa-completo/"
 ```
 
 Abra `http://localhost:3000` — login com `banhosa.adm` / `banhosa123`.
