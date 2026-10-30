@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import {
   AUTH_COOKIE_NAME,
+  changeAppointmentStatus,
   createAppointment,
   createPet,
   createProfessional,
@@ -13,9 +14,12 @@ import {
   deleteProfessional,
   deleteTutor,
   login,
+  updateAppointment,
 } from '@/services/api';
 import {
   AppointmentCreateInput,
+  AppointmentStatus,
+  AppointmentUpdateInput,
   PetCreateInput,
   ProfessionalCreateInput,
   TutorCreateInput,
@@ -53,7 +57,9 @@ export async function logoutAction(): Promise<void> {
 
 // --- Criação ------------------------------------------------------------------
 
-export async function createTutorAction(input: TutorCreateInput): Promise<ActionResult<Awaited<ReturnType<typeof createTutor>>>> {
+export async function createTutorAction(
+  input: TutorCreateInput,
+): Promise<ActionResult<Awaited<ReturnType<typeof createTutor>>>> {
   try {
     const tutor = await createTutor(input);
     revalidatePath('/tutores');
@@ -64,7 +70,9 @@ export async function createTutorAction(input: TutorCreateInput): Promise<Action
   }
 }
 
-export async function createPetAction(input: PetCreateInput): Promise<ActionResult<Awaited<ReturnType<typeof createPet>>>> {
+export async function createPetAction(
+  input: PetCreateInput,
+): Promise<ActionResult<Awaited<ReturnType<typeof createPet>>>> {
   try {
     const pet = await createPet(input);
     revalidatePath('/pets');
@@ -101,6 +109,39 @@ export async function createAppointmentAction(
     // RN-01/RN-02 e demais validações de negócio chegam aqui como erro
     // (ex.: 409 de conflito de horário, 422 de horário fora do expediente).
     return { error: toErrorMessage(error, 'Não foi possível criar o agendamento.') };
+  }
+}
+
+// --- Edição -------------------------------------------------------------------
+
+export async function updateAppointmentAction(
+  id: string,
+  input: AppointmentUpdateInput,
+): Promise<ActionResult<Awaited<ReturnType<typeof updateAppointment>>>> {
+  try {
+    const appointment = await updateAppointment(id, input);
+    revalidatePath('/agendamentos');
+    revalidatePath('/dashboard');
+    return { data: appointment };
+  } catch (error) {
+    // Mesmos erros de negócio da criação (409 conflito, 422 fora do expediente)
+    // e também o 422 de agendamento em status final (não editável).
+    return { error: toErrorMessage(error, 'Não foi possível salvar o agendamento.') };
+  }
+}
+
+export async function changeAppointmentStatusAction(
+  id: string,
+  status: AppointmentStatus,
+): Promise<ActionResult<Awaited<ReturnType<typeof changeAppointmentStatus>>>> {
+  try {
+    const appointment = await changeAppointmentStatus(id, status);
+    revalidatePath('/agendamentos');
+    revalidatePath('/dashboard');
+    return { data: appointment };
+  } catch (error) {
+    // Transições inválidas (ex.: reabrir um agendamento Concluído) chegam aqui como 422.
+    return { error: toErrorMessage(error, 'Não foi possível alterar o status do agendamento.') };
   }
 }
 

@@ -1,10 +1,15 @@
 from datetime import date as date_type
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.exceptions import ConflictError
 from app.models.agendamento import Agendamento
 from app.models.pet import Pet
+
+# SQLSTATE do PostgreSQL para violação de constraint de exclusão (EXCLUDE).
+_EXCLUSION_VIOLATION = "23P01"
 
 _EAGER = (
     # pet + pet.tutor aninhado (usado por AgendamentoRead.tutorName/petName)
@@ -20,10 +25,7 @@ def list_all(db: Session) -> list[Agendamento]:
 
 def list_by_date(db: Session, date: date_type) -> list[Agendamento]:
     stmt = (
-        select(Agendamento)
-        .options(*_EAGER)
-        .where(Agendamento.date == date)
-        .order_by(Agendamento.start_time)
+        select(Agendamento).options(*_EAGER).where(Agendamento.date == date).order_by(Agendamento.start_time)
     )
     return list(db.scalars(stmt).all())
 
@@ -57,9 +59,43 @@ def get_by_id(db: Session, agendamento_id: str) -> Agendamento | None:
     return db.scalars(stmt).first()
 
 
+def exists_for_pet(db: Session, pet_id: str) -> bool:
+    return bool(db.scalar(select(exists().where(Agendamento.pet_id == pet_id))))
+
+
+def exists_for_professional(db: Session, profissional_id: str) -> bool:
+    return bool(db.scalar(select(exists().where(Agendamento.profissional_id == profissional_id))))
+
+
+def exists_for_tutor(db: Session, tutor_id: str) -> bool:
+    stmt = select(exists().where(Agendamento.pet_id == Pet.id, Pet.tutor_id == tutor_id))
+    return bool(db.scalar(stmt))
+
+
+def _commit_or_conflict(db: Session) -> None:
+    """Traduz a violação da constraint de exclusão (RN-02 no banco) para
+    ConflictError — cobre a corrida em que duas requisições passam pela
+    checagem em memória ao mesmo tempo."""
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if getattr(exc.orig, "pgcode", None) == _EXCLUSION_VIOLATION:
+            raise ConflictError(
+                "Conflito de horário: o profissional já possui um agendamento nesse intervalo."
+            ) from exc
+        raise
+
+
 def create(db: Session, agendamento: Agendamento) -> Agendamento:
     db.add(agendamento)
-    db.commit()
+    _commit_or_conflict(db)
+    db.refresh(agendamento)
+    return agendamento
+
+
+def update(db: Session, agendamento: Agendamento) -> Agendamento:
+    _commit_or_conflict(db)
     db.refresh(agendamento)
     return agendamento
 

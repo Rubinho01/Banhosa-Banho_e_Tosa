@@ -10,15 +10,27 @@ para o domínio de agendamentos. Valida regras de negócio, autenticação e flu
   pets grandes) é de responsabilidade do servidor. O backend é a validação canônica.
 - CONFLITOS DE AGENDA: O sistema valida disponibilidade e impede sobreposição de horários 
   para um mesmo profissional, ignorando agendamentos com status "Cancelado".
-- DEPENDÊNCIAS RELACIONAIS: A criação de um agendamento exige a pré-existência e validação 
+- DEPENDÊNCIAS RELACIONAIS: A criação de um agendamento exige a pré-existência e validação
   de um Pet e um Profissional válidos no banco de dados.
+- VALIDAÇÕES (M02): Datas/horários no passado, profissionais inativos e serviços
+  incompatíveis com o papel do profissional são rejeitados com 422.
+- EDIÇÃO E STATUS (M05): Agendamentos podem ser remarcados (PUT) e ter o status alterado
+  (PATCH /status); Concluído e Cancelado são estados finais.
 """
+
+from datetime import date, datetime, timedelta
+
+from app.services import agendamento_service
+
+# Sempre no futuro, para não esbarrar na validação de data no passado (M02).
+FUTURE_DATE = (date.today() + timedelta(days=30)).isoformat()
 
 # ==============================================================================
 # UTILS & FIXTURES LOCAIS
 # ==============================================================================
-# Funções auxiliares para popular o banco de dados com as entidades necessárias 
+# Funções auxiliares para popular o banco de dados com as entidades necessárias
 # antes de testar os agendamentos em si.
+
 
 def _create_tutor(client, headers):
     resp = client.post(
@@ -28,6 +40,7 @@ def _create_tutor(client, headers):
     )
     assert resp.status_code == 201
     return resp.json()
+
 
 def _create_pet(client, headers, tutor_id, size="Grande"):
     resp = client.post(
@@ -44,19 +57,33 @@ def _create_pet(client, headers, tutor_id, size="Grande"):
     assert resp.status_code == 201
     return resp.json()
 
-def _create_professional(client, headers):
+
+def _create_professional(client, headers, name="Ana Tosadora", role="Tosador", active=True):
     resp = client.post(
         "/api/v1/profissionais",
-        json={"name": "Ana Tosadora", "role": "Tosador", "specialty": "Tosa em geral", "active": True},
+        json={"name": name, "role": role, "specialty": "Atendimento geral", "active": active},
         headers=headers,
     )
     assert resp.status_code == 201
     return resp.json()
 
 
+def _create_appointment(client, headers, pet_id, professional_id, **overrides):
+    payload = {
+        "pet_id": pet_id,
+        "profissional_id": professional_id,
+        "service": "Banho",
+        "date": FUTURE_DATE,
+        "start_time": "09:00:00",
+        **overrides,
+    }
+    return client.post("/api/v1/agendamentos", json=payload, headers=headers)
+
+
 # ==============================================================================
 # SUÍTE DE TESTES
 # ==============================================================================
+
 
 def test_create_appointment_calculates_rn01_duration_on_server(client, auth_headers):
     # 1. Arrange
@@ -71,7 +98,7 @@ def test_create_appointment_calculates_rn01_duration_on_server(client, auth_head
             "pet_id": pet["id"],
             "profissional_id": professional["id"],
             "service": "Banho",
-            "date": "2026-09-01",
+            "date": FUTURE_DATE,
             "start_time": "09:00:00",
             "status": "Pendente",
         },
@@ -81,9 +108,12 @@ def test_create_appointment_calculates_rn01_duration_on_server(client, auth_head
     # 3. Assert
     assert resp.status_code == 201
     body = resp.json()
-    
+
     # Banho = 60min base; porte Grande dobra (RN-01) => 120min
     assert body["durationMinutes"] == 120
+    # IDs de referência usados pelo frontend para pré-preencher a edição
+    assert body["petId"] == pet["id"]
+    assert body["professionalId"] == professional["id"]
 
 
 def test_overlapping_appointment_is_rejected_with_409(client, auth_headers):
@@ -98,7 +128,7 @@ def test_overlapping_appointment_is_rejected_with_409(client, auth_headers):
             "pet_id": pet_pequeno["id"],
             "profissional_id": professional["id"],
             "service": "Banho",  # 60min, porte Pequeno não dobra
-            "date": "2026-09-01",
+            "date": FUTURE_DATE,
             "start_time": "09:00:00",
             "status": "Pendente",
         },
@@ -113,13 +143,13 @@ def test_overlapping_appointment_is_rejected_with_409(client, auth_headers):
             "pet_id": pet_pequeno["id"],
             "profissional_id": professional["id"],
             "service": "Tosa higiênica",
-            "date": "2026-09-01",
+            "date": FUTURE_DATE,
             "start_time": "09:30:00",  # Sobrepõe o agendamento anterior
             "status": "Pendente",
         },
         headers=auth_headers,
     )
-    
+
     # 3. Assert
     assert second.status_code == 409
 
@@ -127,7 +157,7 @@ def test_overlapping_appointment_is_rejected_with_409(client, auth_headers):
 def test_appointment_requires_authentication(client):
     # 1. Arrange & Act (Tentativa de acesso sem os headers de autenticação)
     resp = client.get("/api/v1/agendamentos")
-    
+
     # 2. Assert
     assert resp.status_code == 401
 
@@ -138,7 +168,7 @@ def test_appointment_requires_existing_pet_and_professional(client, auth_headers
         "pet_id": "pet-inexistente",
         "profissional_id": "profissional-inexistente",
         "service": "Banho",
-        "date": "2026-09-01",
+        "date": FUTURE_DATE,
         "start_time": "09:00:00",
     }
 
@@ -154,15 +184,15 @@ def test_appointments_can_be_listed_and_deleted(client, auth_headers):
     # 1. Arrange (Cria as entidades base e 1 agendamento)
     tutor = _create_tutor(client, auth_headers)
     pet = _create_pet(client, auth_headers, tutor["id"], size="Pequeno")
-    professional = _create_professional(client, auth_headers)
-    
+    professional = _create_professional(client, auth_headers, name="Dr. Paulo", role="Veterinário")
+
     response = client.post(
         "/api/v1/agendamentos",
         json={
             "pet_id": pet["id"],
             "profissional_id": professional["id"],
             "service": "Consulta veterinária",
-            "date": "2026-09-01",
+            "date": FUTURE_DATE,
             "start_time": "09:00:00",
         },
         headers=auth_headers,
@@ -185,12 +215,12 @@ def test_cancelled_appointment_does_not_block_new_booking(client, auth_headers):
     tutor = _create_tutor(client, auth_headers)
     pet = _create_pet(client, auth_headers, tutor["id"], size="Pequeno")
     professional = _create_professional(client, auth_headers)
-    
+
     payload = {
         "pet_id": pet["id"],
         "profissional_id": professional["id"],
         "service": "Banho",
-        "date": "2026-09-01",
+        "date": FUTURE_DATE,
         "start_time": "09:00:00",
         "status": "Cancelado",
     }
@@ -222,7 +252,7 @@ def test_appointment_outside_business_hours_returns_validation_error(client, aut
             "pet_id": pet["id"],
             "profissional_id": professional["id"],
             "service": "Banho",
-            "date": "2026-09-01",
+            "date": FUTURE_DATE,
             "start_time": "18:00:00",
         },
         headers=auth_headers,
@@ -253,3 +283,179 @@ def test_invalid_appointment_payload_returns_validation_error(client, auth_heade
     )
 
     assert response.status_code == 422
+
+
+# ==============================================================================
+# SUÍTE DE TESTES: VALIDAÇÕES DE CRIAÇÃO (M02)
+# ==============================================================================
+
+
+def test_appointment_in_past_date_is_rejected(client, auth_headers):
+    tutor = _create_tutor(client, auth_headers)
+    pet = _create_pet(client, auth_headers, tutor["id"], size="Pequeno")
+    professional = _create_professional(client, auth_headers)
+
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    response = _create_appointment(client, auth_headers, pet["id"], professional["id"], date=yesterday)
+
+    assert response.status_code == 422
+    assert "passado" in response.json()["detail"]
+
+
+def test_appointment_earlier_today_is_rejected(client, auth_headers, monkeypatch):
+    # Congela o "agora" às 12:00 do dia do agendamento: 09:00 já passou, 13:00 não.
+    frozen_now = datetime.fromisoformat(f"{FUTURE_DATE}T12:00:00")
+    monkeypatch.setattr(agendamento_service, "_now", lambda: frozen_now)
+
+    tutor = _create_tutor(client, auth_headers)
+    pet = _create_pet(client, auth_headers, tutor["id"], size="Pequeno")
+    professional = _create_professional(client, auth_headers)
+
+    past_slot = _create_appointment(
+        client, auth_headers, pet["id"], professional["id"], start_time="09:00:00"
+    )
+    future_slot = _create_appointment(
+        client, auth_headers, pet["id"], professional["id"], start_time="13:00:00"
+    )
+
+    assert past_slot.status_code == 422
+    assert future_slot.status_code == 201
+
+
+def test_appointment_with_inactive_professional_is_rejected(client, auth_headers):
+    tutor = _create_tutor(client, auth_headers)
+    pet = _create_pet(client, auth_headers, tutor["id"], size="Pequeno")
+    professional = _create_professional(client, auth_headers, active=False)
+
+    response = _create_appointment(client, auth_headers, pet["id"], professional["id"])
+
+    assert response.status_code == 422
+    assert "inativo" in response.json()["detail"]
+
+
+def test_appointment_with_service_incompatible_with_role_is_rejected(client, auth_headers):
+    tutor = _create_tutor(client, auth_headers)
+    pet = _create_pet(client, auth_headers, tutor["id"], size="Pequeno")
+    groomer = _create_professional(client, auth_headers)
+    vet = _create_professional(client, auth_headers, name="Dr. Paulo", role="Veterinário")
+
+    vet_service_with_groomer = _create_appointment(
+        client, auth_headers, pet["id"], groomer["id"], service="Consulta veterinária"
+    )
+    grooming_with_vet = _create_appointment(client, auth_headers, pet["id"], vet["id"], service="Banho")
+
+    assert vet_service_with_groomer.status_code == 422
+    assert "Veterinário" in vet_service_with_groomer.json()["detail"]
+    assert grooming_with_vet.status_code == 422
+    assert "Tosador" in grooming_with_vet.json()["detail"]
+
+
+# ==============================================================================
+# SUÍTE DE TESTES: EDIÇÃO E STATUS (M05)
+# ==============================================================================
+
+
+def _reschedule_payload(pet_id, professional_id, start_time):
+    return {
+        "pet_id": pet_id,
+        "profissional_id": professional_id,
+        "service": "Banho",
+        "date": FUTURE_DATE,
+        "start_time": start_time,
+    }
+
+
+def test_appointment_can_be_rescheduled_and_duration_is_recalculated(client, auth_headers):
+    tutor = _create_tutor(client, auth_headers)
+    small_pet = _create_pet(client, auth_headers, tutor["id"], size="Pequeno")
+    big_pet = _create_pet(client, auth_headers, tutor["id"], size="Gigante")
+    professional = _create_professional(client, auth_headers)
+    created = _create_appointment(client, auth_headers, small_pet["id"], professional["id"]).json()
+
+    # 09:30 sobrepõe o horário antigo do próprio agendamento: não pode conflitar consigo mesmo.
+    response = client.put(
+        f"/api/v1/agendamentos/{created['id']}",
+        json=_reschedule_payload(big_pet["id"], professional["id"], "09:30:00"),
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["startTime"] == "09:30:00"
+    assert body["durationMinutes"] == 120  # RN-01: porte Gigante dobra
+    assert body["status"] == "Pendente"
+
+
+def test_reschedule_into_occupied_slot_returns_409(client, auth_headers):
+    tutor = _create_tutor(client, auth_headers)
+    pet = _create_pet(client, auth_headers, tutor["id"], size="Pequeno")
+    professional = _create_professional(client, auth_headers)
+    _create_appointment(client, auth_headers, pet["id"], professional["id"], start_time="09:00:00")
+    second = _create_appointment(
+        client, auth_headers, pet["id"], professional["id"], start_time="11:00:00"
+    ).json()
+
+    response = client.put(
+        f"/api/v1/agendamentos/{second['id']}",
+        json=_reschedule_payload(pet["id"], professional["id"], "09:30:00"),
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 409
+
+
+def test_appointment_status_flow_and_final_states(client, auth_headers):
+    tutor = _create_tutor(client, auth_headers)
+    pet = _create_pet(client, auth_headers, tutor["id"], size="Pequeno")
+    professional = _create_professional(client, auth_headers)
+    appointment = _create_appointment(client, auth_headers, pet["id"], professional["id"]).json()
+    status_url = f"/api/v1/agendamentos/{appointment['id']}/status"
+
+    confirmed = client.patch(status_url, json={"status": "Confirmado"}, headers=auth_headers)
+    concluded = client.patch(status_url, json={"status": "Concluído"}, headers=auth_headers)
+    reopened = client.patch(status_url, json={"status": "Pendente"}, headers=auth_headers)
+    edited = client.put(
+        f"/api/v1/agendamentos/{appointment['id']}",
+        json=_reschedule_payload(pet["id"], professional["id"], "10:00:00"),
+        headers=auth_headers,
+    )
+
+    assert confirmed.status_code == 200
+    assert confirmed.json()["status"] == "Confirmado"
+    assert concluded.status_code == 200
+    assert concluded.json()["status"] == "Concluído"
+    assert reopened.status_code == 422  # Concluído é estado final
+    assert edited.status_code == 422  # agendamento concluído não é editável
+    # O histórico é preservado: o agendamento continua listado.
+    assert client.get("/api/v1/agendamentos", headers=auth_headers).json()[0]["status"] == "Concluído"
+
+
+def test_cancelling_appointment_frees_the_slot(client, auth_headers):
+    tutor = _create_tutor(client, auth_headers)
+    pet = _create_pet(client, auth_headers, tutor["id"], size="Pequeno")
+    professional = _create_professional(client, auth_headers)
+    appointment = _create_appointment(client, auth_headers, pet["id"], professional["id"]).json()
+
+    cancelled = client.patch(
+        f"/api/v1/agendamentos/{appointment['id']}/status",
+        json={"status": "Cancelado"},
+        headers=auth_headers,
+    )
+    same_slot = _create_appointment(client, auth_headers, pet["id"], professional["id"])
+
+    assert cancelled.status_code == 200
+    assert same_slot.status_code == 201
+
+
+def test_update_and_status_of_missing_appointment_return_not_found(client, auth_headers):
+    status_resp = client.patch(
+        "/api/v1/agendamentos/id-inexistente/status", json={"status": "Confirmado"}, headers=auth_headers
+    )
+    update_resp = client.put(
+        "/api/v1/agendamentos/id-inexistente",
+        json=_reschedule_payload("pet", "prof", "09:00:00"),
+        headers=auth_headers,
+    )
+
+    assert status_resp.status_code == 404
+    assert update_resp.status_code == 404

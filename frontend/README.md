@@ -1,26 +1,36 @@
-# Banhosa Baso — Front-end
+# Banhosa — Front-end
 
 Frontend do MVP do sistema de banho, tosa e atendimento veterinário, seguindo a especificação do projeto.
 
 ## Stack
-- Next.js 14 (App Router)
-- React 18
+
+- Next.js 16 (App Router)
+- React 19
+- Node.js >= 20.9
 - TypeScript com `strict: true`
 - CSS próprio, sem biblioteca visual externa
 
 ## Executar
+
 ```bash
 npm install
 npm run dev
 ```
+
 Abra `http://localhost:3000`.
 
 ## Validação
+
 ```bash
-npm run typecheck
+npm run typecheck   # gera os tipos de rota (next typegen) e roda o tsc
 npm run lint
+npm run format:check # verifica a formatação com Prettier
+npm run test        # Vitest (npm run test:coverage para cobertura)
 npm run build
 ```
+
+Ao executar `npm install`, o Husky configura o hook de pre-commit. O lint-staged
+aplica ESLint e Prettier somente aos arquivos adicionados ao commit.
 
 ## Integração com FastAPI
 
@@ -40,7 +50,7 @@ cp .env.local.example .env.local
 O login (`/login`) chama `POST /api/v1/auth/login` no backend e guarda o JWT
 retornado num cookie `banhosa_token` **httpOnly** (não acessível via
 JavaScript no navegador — só o servidor Next.js lê e envia esse token como
-`Authorization: Bearer <token>` nas chamadas à API). O `middleware.ts` checa
+`Authorization: Bearer <token>` nas chamadas à API). O `proxy.ts` (antigo `middleware.ts`, renomeado no Next.js 16) checa
 a presença desse cookie para proteger as rotas do dashboard; a validação de
 verdade do token acontece a cada chamada à API (que responde 401 se
 inválido/expirado).
@@ -63,6 +73,18 @@ Use as credenciais do seed do backend: `banhosa.adm` / `banhosa123`.
 - Logout passa por uma Server Action (`logoutAction`), já que o cookie do
   token é `httpOnly` e não pode mais ser apagado via `document.cookie`.
 
+### Edição e status de agendamentos
+
+- `/agendamentos/{id}/editar` — remarca o atendimento (`PUT /agendamentos/{id}`).
+  O formulário é o mesmo da criação (`AgendamentoForm`), pré-preenchido.
+- `/agendamentos/{id}/status` — confirma, conclui ou cancela
+  (`PATCH /agendamentos/{id}/status`).
+
+O frontend **não** replica regras de negócio: a duração (RN-01) não é mais
+estimada no cliente — a tela mostra o `durationMinutes` devolvido pela API —
+e as transições de status permitidas são decididas pelo backend. Erros como
+conflito de horário ou transição inválida são exibidos com a mensagem da API.
+
 ### Rodando os dois juntos
 
 ```bash
@@ -74,4 +96,3 @@ cd frontend && npm run dev
 ```
 
 Abra `http://localhost:3000` — vai redirecionar para `/login`.
-

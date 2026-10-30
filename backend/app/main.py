@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 
 from app.api.router import api_router
 from app.core.config import settings
@@ -28,6 +29,7 @@ app.add_middleware(
 # nenhuma dependência do FastAPI) para respostas HTTP com o status
 # correto. Isso evita try/except repetido em cada router e mantém a
 # camada de serviço 100% testável de forma isolada.
+
 
 def _error_response(status_code: int, message: str) -> JSONResponse:
     return JSONResponse(status_code=status_code, content={"detail": message})
@@ -58,7 +60,20 @@ async def inactive_user_handler(_request: Request, exc: InactiveUserError) -> JS
     return _error_response(status.HTTP_403_FORBIDDEN, str(exc))
 
 
+@app.exception_handler(IntegrityError)
+async def integrity_error_handler(_request: Request, _exc: IntegrityError) -> JSONResponse:
+    # Rede de segurança: os services já checam vínculos e conflitos antes de
+    # gravar, mas qualquer violação de constraint que escape (FK RESTRICT,
+    # unique, etc.) vira 409 com mensagem clara em vez de erro 500.
+    return _error_response(
+        status.HTTP_409_CONFLICT,
+        "Operação não permitida: viola uma restrição de integridade dos dados "
+        "(ex.: registro com vínculos).",
+    )
+
+
 # --- Rotas -------------------------------------------------------------------
+
 
 @app.get("/health", tags=["health"])
 def health_check() -> dict:

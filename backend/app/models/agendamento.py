@@ -1,11 +1,33 @@
 import uuid
-from datetime import date as date_type, datetime, time as time_type
+from datetime import date as date_type
+from datetime import datetime
+from datetime import time as time_type
+from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Date, Time, func
+from sqlalchemy import DDL, Date, DateTime, Enum, ForeignKey, Integer, String, Time, event, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.models.enums import StatusAgendamento
+
+if TYPE_CHECKING:
+    from app.models.pet import Pet
+    from app.models.profissional import Profissional
+
+# RN-02 no nível do banco: impede que dois agendamentos não cancelados do
+# mesmo profissional ocupem intervalos sobrepostos, mesmo sob requisições
+# concorrentes. Exige a extensão btree_gist (igualdade de texto em índice GiST).
+# Mesma definição da migration 0002 — mantenha as duas em sincronia para
+# que create_all e Alembic gerem o mesmo schema.
+EXCLUDE_OVERLAP_CONSTRAINT_NAME = "ex_agendamentos_profissional_sem_sobreposicao"
+CREATE_BTREE_GIST_SQL = "CREATE EXTENSION IF NOT EXISTS btree_gist"
+ADD_EXCLUDE_OVERLAP_SQL = (
+    f"ALTER TABLE agendamentos ADD CONSTRAINT {EXCLUDE_OVERLAP_CONSTRAINT_NAME} "
+    "EXCLUDE USING gist ("
+    "profissional_id WITH =, "
+    'tsrange("date" + start_time, "date" + start_time + make_interval(mins => duration_minutes)) WITH &&'
+    ") WHERE (status <> 'Cancelado')"
+)
 
 
 class Agendamento(Base):
@@ -14,7 +36,9 @@ class Agendamento(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     pet_id: Mapped[str] = mapped_column(ForeignKey("pets.id", ondelete="RESTRICT"), nullable=False)
-    profissional_id: Mapped[str] = mapped_column(ForeignKey("profissionais.id", ondelete="RESTRICT"), nullable=False)
+    profissional_id: Mapped[str] = mapped_column(
+        ForeignKey("profissionais.id", ondelete="RESTRICT"), nullable=False
+    )
 
     service: Mapped[str] = mapped_column(String(60), nullable=False)
     date: Mapped[date_type] = mapped_column(Date, nullable=False)
@@ -52,3 +76,18 @@ class Agendamento(Base):
     @property
     def size(self):  # PortePet, evitando import circular no type hint
         return self.pet.size if self.pet else None
+
+
+# Aplica a constraint quando o schema é criado via metadata.create_all
+# (ex.: app.seed). Via Alembic, a migration 0002 cuida disso. Somente
+# PostgreSQL — o SQLite usado nos testes não suporta EXCLUDE.
+event.listen(
+    Agendamento.__table__,
+    "before_create",
+    DDL(CREATE_BTREE_GIST_SQL).execute_if(dialect="postgresql"),
+)
+event.listen(
+    Agendamento.__table__,
+    "after_create",
+    DDL(ADD_EXCLUDE_OVERLAP_SQL).execute_if(dialect="postgresql"),
+)
