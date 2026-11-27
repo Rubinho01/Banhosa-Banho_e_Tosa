@@ -39,5 +39,6 @@ def change_agendamento_status(
 
 
 @router.delete("/{agendamento_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_agendamento(agendamento_id: str, db: DbSession, _current_user: CurrentUser) -> None:
-    agendamento_service.delete_appointment(db, agendamento_id)
+def cancel_agendamento(agendamento_id: str, db: DbSession, _current_user: CurrentUser) -> None:
+    """Não apaga o registro: cancela o agendamento (PI-02), preservando o histórico."""
+    agendamento_service.cancel_appointment(db, agendamento_id)
