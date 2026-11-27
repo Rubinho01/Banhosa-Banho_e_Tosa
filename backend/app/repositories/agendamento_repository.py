@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import ConflictError
 from app.models.agendamento import Agendamento
+from app.models.enums import STATUS_ATIVOS, StatusAgendamento
 from app.models.pet import Pet
 
 # SQLSTATE do PostgreSQL para violação de constraint de exclusão (EXCLUDE).
@@ -46,7 +47,7 @@ def list_by_professional_and_date(
         .where(
             Agendamento.profissional_id == profissional_id,
             Agendamento.date == date,
-            Agendamento.status != "Cancelado",
+            Agendamento.status != StatusAgendamento.CANCELADO,
         )
     )
     if exclude_id is not None:
@@ -61,6 +62,13 @@ def get_by_id(db: Session, agendamento_id: str) -> Agendamento | None:
 
 def exists_for_pet(db: Session, pet_id: str) -> bool:
     return bool(db.scalar(select(exists().where(Agendamento.pet_id == pet_id))))
+
+
+def exists_active_for_pet(db: Session, pet_id: str) -> bool:
+    """Há reserva viva (Pendente/Confirmado) para o pet? Usado pela política
+    de alteração de porte (PI-03)."""
+    stmt = select(exists().where(Agendamento.pet_id == pet_id, Agendamento.status.in_(STATUS_ATIVOS)))
+    return bool(db.scalar(stmt))
 
 
 def exists_for_professional(db: Session, profissional_id: str) -> bool:
@@ -100,6 +108,5 @@ def update(db: Session, agendamento: Agendamento) -> Agendamento:
     return agendamento
 
 
-def delete(db: Session, agendamento: Agendamento) -> None:
-    db.delete(agendamento)
-    db.commit()
+# Não há `delete`: agendamentos nunca são removidos fisicamente (PI-02).
+# "Excluir" é cancelar (ver agendamento_service.cancel_appointment).

@@ -30,3 +30,8 @@ class StatusAgendamento(str, enum.Enum):
     PENDENTE = "Pendente"
     CONCLUIDO = "Concluído"
     CANCELADO = "Cancelado"
+
+
+# Status que representam uma reserva ainda viva (ocupam a agenda e dependem do
+# porte do pet para a duração). Concluído e Cancelado são finais (RN-06).
+STATUS_ATIVOS = (StatusAgendamento.PENDENTE, StatusAgendamento.CONFIRMADO)
