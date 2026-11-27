@@ -296,15 +296,28 @@ def test_deleting_resources_with_appointments_returns_409(client, auth_headers):
     assert len(client.get("/api/v1/profissionais", headers=auth_headers).json()) == 1
 
 
-def test_resources_can_be_deleted_after_their_appointments(client, auth_headers):
+def test_resources_stay_protected_after_their_appointments_are_cancelled(client, auth_headers):
+    # PI-02: "excluir" um agendamento só o cancela; o registro continua no histórico
+    # e, por isso, tutor/pet/profissional continuam sem poder ser excluídos.
     tutor, pet, professional, appointment = _create_linked_appointment(client, auth_headers)
 
-    client.delete(f"/api/v1/agendamentos/{appointment['id']}", headers=auth_headers)
+    cancelled = client.delete(f"/api/v1/agendamentos/{appointment['id']}", headers=auth_headers)
+    assert cancelled.status_code == 204
 
-    deleted_professional = client.delete(f"/api/v1/profissionais/{professional['id']}", headers=auth_headers)
-    deleted_tutor = client.delete(f"/api/v1/tutores/{tutor['id']}", headers=auth_headers)
+    for route, resource_id in (
+        ("profissionais", professional["id"]),
+        ("tutores", tutor["id"]),
+        ("pets", pet["id"]),
+    ):
+        response = client.delete(f"/api/v1/{route}/{resource_id}", headers=auth_headers)
+        assert response.status_code == 409
+        assert "histórico" in response.json()["detail"]
 
-    assert deleted_professional.status_code == 204
-    assert deleted_tutor.status_code == 204
-    # O pet foi removido em cascata junto com o tutor
-    assert client.get("/api/v1/pets", headers=auth_headers).json() == []
+    # Para tirar o profissional de uso sem perder o histórico, ele é inativado.
+    deactivated = client.put(
+        f"/api/v1/profissionais/{professional['id']}",
+        json=professional_payload(active=False),
+        headers=auth_headers,
+    )
+    assert deactivated.status_code == 200
+    assert deactivated.json()["active"] is False
