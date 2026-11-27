@@ -123,6 +123,8 @@ def create_appointment(db: Session, payload: AgendamentoCreate) -> Agendamento:
         start_time=payload.start_time,
     )
 
+    # PI-01: todo agendamento nasce Pendente, independentemente do que o cliente
+    # envie; confirmar/concluir/cancelar passa pelo fluxo de status (RN-06).
     agendamento = Agendamento(
         pet_id=pet.id,
         profissional_id=profissional.id,
@@ -130,7 +132,7 @@ def create_appointment(db: Session, payload: AgendamentoCreate) -> Agendamento:
         date=payload.date,
         start_time=payload.start_time,
         duration_minutes=duration_minutes,
-        status=payload.status,
+        status=StatusAgendamento.PENDENTE,
     )
     return agendamento_repository.create(db, agendamento)
 
@@ -169,6 +171,17 @@ def change_status(db: Session, agendamento_id: str, new_status: StatusAgendament
     return agendamento_repository.update(db, agendamento)
 
 
-def delete_appointment(db: Session, agendamento_id: str) -> None:
+def cancel_appointment(db: Session, agendamento_id: str) -> None:
+    """PI-02: agendamentos nunca são apagados fisicamente; "excluir" cancela.
+
+    O registro continua no histórico e o horário é liberado (RN-02 ignora
+    cancelados). Cancelar de novo é idempotente; um agendamento Concluído é
+    estado final e não pode ser cancelado."""
     agendamento = _get_or_404(db, agendamento_id)
-    agendamento_repository.delete(db, agendamento)
+    if agendamento.status == StatusAgendamento.CANCELADO:
+        return
+    if agendamento.status == StatusAgendamento.CONCLUIDO:
+        raise ValidationError(
+            "Agendamentos concluídos não podem ser cancelados nem excluídos: o histórico é preservado."
+        )
+    change_status(db, agendamento_id, StatusAgendamento.CANCELADO)
