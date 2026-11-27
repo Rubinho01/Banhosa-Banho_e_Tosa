@@ -1,33 +1,40 @@
 from datetime import date as date_type
 from datetime import time as time_type
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.enums import PortePet, StatusAgendamento
 
 
-class AgendamentoCreate(BaseModel):
-    """Payload de criação. O backend recalcula a duração (RN-01) e valida
-    disponibilidade (RN-02) — nada disso é confiado ao cliente."""
+class AgendamentoBase(BaseModel):
+    """Campos comuns à criação e à remarcação. O backend recalcula a duração
+    (RN-01) e valida disponibilidade (RN-02) — nada disso é confiado ao cliente."""
 
     pet_id: str
     profissional_id: str
     service: str = Field(min_length=1, max_length=60)
     date: date_type
     start_time: time_type
-    status: StatusAgendamento = StatusAgendamento.PENDENTE
+
+    @field_validator("start_time")
+    @classmethod
+    def _normalize_to_whole_minute(cls, value: time_type) -> time_type:
+        # PI-04: a agenda trabalha em minutos inteiros. Segundos/microssegundos
+        # são descartados aqui para que a regra em memória (RN-02), a constraint
+        # EXCLUDE do banco e a checagem de "passado" enxerguem o mesmo horário.
+        return value.replace(second=0, microsecond=0)
 
 
-class AgendamentoUpdate(BaseModel):
+class AgendamentoCreate(AgendamentoBase):
+    """Payload de criação. Não há campo de status: todo agendamento nasce
+    Pendente (PI-01) e muda de status apenas por PATCH /agendamentos/{id}/status.
+    Um "status" enviado por clientes antigos é ignorado."""
+
+
+class AgendamentoUpdate(AgendamentoBase):
     """Payload de edição/remarcação. Passa pelas mesmas validações da
     criação (RN-01, RN-02, M02). O status muda apenas pelo endpoint
     dedicado (PATCH /agendamentos/{id}/status), preservando o histórico."""
-
-    pet_id: str
-    profissional_id: str
-    service: str = Field(min_length=1, max_length=60)
-    date: date_type
-    start_time: time_type
 
 
 class AgendamentoStatusUpdate(BaseModel):
