@@ -16,6 +16,8 @@ para o domínio de agendamentos. Valida regras de negócio, autenticação e flu
   incompatíveis com o papel do profissional são rejeitados com 422.
 - EDIÇÃO E STATUS (M05): Agendamentos podem ser remarcados (PUT) e ter o status alterado
   (PATCH /status); Concluído e Cancelado são estados finais.
+- INTEGRIDADE (PI-01/PI-02): todo agendamento nasce Pendente e DELETE cancela em vez de
+  apagar; esses cenários ficam em test_integridade_agenda_api.py.
 """
 
 from datetime import date, datetime, timedelta
@@ -180,7 +182,7 @@ def test_appointment_requires_existing_pet_and_professional(client, auth_headers
     assert "Pet" in response.json()["detail"]
 
 
-def test_appointments_can_be_listed_and_deleted(client, auth_headers):
+def test_appointments_can_be_listed_and_cancelled_via_delete(client, auth_headers):
     # 1. Arrange (Cria as entidades base e 1 agendamento)
     tutor = _create_tutor(client, auth_headers)
     pet = _create_pet(client, auth_headers, tutor["id"], size="Pequeno")
@@ -204,36 +206,30 @@ def test_appointments_can_be_listed_and_deleted(client, auth_headers):
     assert listed.status_code == 200
     assert listed.json()[0]["service"] == "Consulta veterinária"
 
-    # 3. Act & Assert (Valida Exclusão e nova listagem vazia)
+    # 3. Act & Assert (PI-02: DELETE não apaga; cancela e o histórico permanece listado)
     deleted = client.delete(f"/api/v1/agendamentos/{appointment_id}", headers=auth_headers)
     assert deleted.status_code == 204
-    assert client.get("/api/v1/agendamentos", headers=auth_headers).json() == []
+    after = client.get("/api/v1/agendamentos", headers=auth_headers).json()
+    assert [item["status"] for item in after] == ["Cancelado"]
 
 
 def test_cancelled_appointment_does_not_block_new_booking(client, auth_headers):
-    # 1. Arrange (Cria um agendamento com status "Cancelado")
+    # 1. Arrange (Cria um agendamento e o cancela pelo fluxo de status — PI-01)
     tutor = _create_tutor(client, auth_headers)
     pet = _create_pet(client, auth_headers, tutor["id"], size="Pequeno")
     professional = _create_professional(client, auth_headers)
 
-    payload = {
-        "pet_id": pet["id"],
-        "profissional_id": professional["id"],
-        "service": "Banho",
-        "date": FUTURE_DATE,
-        "start_time": "09:00:00",
-        "status": "Cancelado",
-    }
-
-    cancelled = client.post("/api/v1/agendamentos", json=payload, headers=auth_headers)
-    assert cancelled.status_code == 201
-
-    # 2. Act (Cria um novo agendamento "Confirmado" exatamente no mesmo slot)
-    active = client.post(
-        "/api/v1/agendamentos",
-        json={**payload, "status": "Confirmado"},
+    created = _create_appointment(client, auth_headers, pet["id"], professional["id"])
+    assert created.status_code == 201
+    cancelled = client.patch(
+        f"/api/v1/agendamentos/{created.json()['id']}/status",
+        json={"status": "Cancelado"},
         headers=auth_headers,
     )
+    assert cancelled.status_code == 200
+
+    # 2. Act (Cria um novo agendamento exatamente no mesmo slot)
+    active = _create_appointment(client, auth_headers, pet["id"], professional["id"])
 
     # 3. Assert (A sobreposição deve ser aceita pois a primeira reserva foi cancelada)
     assert active.status_code == 201
