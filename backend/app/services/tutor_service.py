@@ -38,11 +38,11 @@ def update_tutor(db: Session, tutor_id: str, payload: TutorUpdate) -> Tutor:
 
 def delete_tutor(db: Session, tutor_id: str) -> None:
     tutor = _get_or_404(db, tutor_id)
-    # Excluir o tutor remove os pets em cascata; agendamentos desses pets
-    # bloqueiam a exclusão (FK RESTRICT) e precisam ser preservados como histórico.
+    # Excluir o tutor remove os pets em cascata; agendamentos desses pets (mesmo
+    # os cancelados, PI-02) bloqueiam a exclusão (FK RESTRICT) para preservar o histórico.
     if agendamento_repository.exists_for_tutor(db, tutor.id):
         raise ConflictError(
-            "Não é possível excluir o tutor: existem agendamentos vinculados aos seus pets. "
-            "Exclua esses agendamentos antes de remover o tutor."
+            "Não é possível excluir o tutor: existem agendamentos vinculados aos seus pets "
+            "(o histórico de agendamentos é preservado)."
         )
     tutor_repository.delete(db, tutor)
