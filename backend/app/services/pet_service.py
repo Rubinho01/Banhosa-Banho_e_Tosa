@@ -42,6 +42,15 @@ def update_pet(db: Session, pet_id: str, payload: PetUpdate) -> Pet:
     pet = _get_or_404(db, pet_id)
     tutor = _get_tutor_or_404(db, payload.tutor_id)
 
+    # PI-03: a duração gravada em cada agendamento depende do porte (RN-01).
+    # Trocar o porte com reserva viva deixaria a agenda com durações erradas e
+    # possíveis sobreposições; por isso a troca só é aceita sem reservas ativas.
+    if payload.size != pet.size and agendamento_repository.exists_active_for_pet(db, pet.id):
+        raise ConflictError(
+            "Não é possível alterar o porte do pet: existem agendamentos pendentes ou confirmados "
+            "e a duração deles depende do porte (RN-01). Conclua ou cancele esses agendamentos antes."
+        )
+
     pet.name = payload.name
     pet.species = payload.species
     pet.breed = payload.breed
@@ -54,7 +63,7 @@ def delete_pet(db: Session, pet_id: str) -> None:
     pet = _get_or_404(db, pet_id)
     if agendamento_repository.exists_for_pet(db, pet.id):
         raise ConflictError(
-            "Não é possível excluir o pet: existem agendamentos vinculados a ele. "
-            "Exclua esses agendamentos antes de remover o pet."
+            "Não é possível excluir o pet: existem agendamentos vinculados a ele "
+            "(o histórico de agendamentos é preservado)."
         )
     pet_repository.delete(db, pet)
